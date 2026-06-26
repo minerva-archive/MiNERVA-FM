@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 # MiNERVA-FM station — headless, container-native radio engine.
 # Indexes $MUSIC_DIR, then continuously picks a random track, publishes
 # now-playing to the metadata bridge, and decodes it to PCM on the shared FIFO

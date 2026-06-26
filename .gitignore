@@ -12,4 +12,7 @@
 .env
 # node / certs / local cruft
 node_modules/
-*.pem
+*.pem
+*.key
+.DS_Store
+*~

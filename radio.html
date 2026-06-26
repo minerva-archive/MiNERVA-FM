@@ -453,4 +453,50 @@ function frame(time){
    BOOT
    ========================================================================== */
 function boot(){
-  try { glOK = initGL(); } catch(e)
+  try { glOK = initGL(); } catch(e){ console.warn("WebGL init failed, 2D fallback:", e); glOK = false; }
+  setVolume(volume); // initialise the display
+  rollLook();
+  ticker.reroll(performance.now());
+  requestAnimationFrame(frame);
+
+  const power = document.getElementById("power");
+  power.addEventListener("click", async () => {
+    powerStart = performance.now();
+    power.remove();
+    initAudio();
+    await actx.resume();
+    state.source = "ON AIR"; state.track = "tuning in…";
+    tuneIn();
+    connectMeta();
+  }, { once:true });
+
+  addEventListener("keydown", (e) => {
+    if(e.key === "m" || e.key === "M") CRT.mono = !CRT.mono;
+    else if(e.key === "s" || e.key === "S") CRT.scanline = CRT.scanline > 0 ? 0 : 0.30;
+    else if(e.key === "ArrowUp")   setVolume(volume + 0.02);
+    else if(e.key === "ArrowDown") setVolume(volume - 0.02);
+  });
+  addEventListener("wheel", (e) => {
+    e.preventDefault();
+    setVolume(volume + (e.deltaY < 0 ? 0.02 : -0.02));
+  }, { passive: false });
+
+  // Touch: swipe up/down anywhere on the page to adjust volume
+  let _touchY = null;
+  addEventListener("touchstart", (e) => { _touchY = e.touches[0].clientY; }, { passive: true });
+  addEventListener("touchmove",  (e) => {
+    if(_touchY === null) return;
+    const dy = _touchY - e.touches[0].clientY;
+    if(Math.abs(dy) >= 6){ setVolume(volume + (dy > 0 ? 0.02 : -0.02)); _touchY = e.touches[0].clientY; }
+  }, { passive: true });
+  addEventListener("touchend", () => { _touchY = null; }, { passive: true });
+
+  // Resume AudioContext if the browser suspended it when the tab went to background
+  document.addEventListener("visibilitychange", () => {
+    if(!document.hidden && actx && actx.state === "suspended") actx.resume();
+  });
+}
+boot();
+</script>
+</body>
+</html>
