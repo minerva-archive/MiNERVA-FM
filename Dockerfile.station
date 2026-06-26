@@ -23,7 +23,8 @@ COPY station/station.sh         /app/station.sh
 COPY station/nginx.docker.conf  /etc/nginx/conf.d/minerva.conf
 COPY station/supervisord.conf   /etc/supervisor/conf.d/minerva.conf
 COPY station/entrypoint.sh      /app/entrypoint.sh
-RUN chmod +x /app/station.sh /app/entrypoint.sh /app/minerva-indexer.sh
+RUN sed -i 's/\r$//' /app/station.sh /app/entrypoint.sh /app/minerva-indexer.sh /app/minerva-radio.sh \
+ && chmod +x /app/station.sh /app/entrypoint.sh /app/minerva-indexer.sh /app/minerva-radio.sh
 
 VOLUME /music
 EXPOSE 8080
