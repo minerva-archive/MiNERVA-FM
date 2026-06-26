@@ -93,4 +93,17 @@ while true; do
             # Pipeline: sidplayfp → ffmpeg. $! is the ffmpeg PID; killing it
             # causes sidplayfp to get SIGPIPE and exit cleanly.
             { sidplayfp -t"$dur" -w- "$path" 2>/dev/null \
-              | ffmpeg -hide_banner -loglevel error -i - -f s16le -ar 44100 -ac 2 - 
+              | ffmpeg -hide_banner -loglevel error -i - -f s16le -ar 44100 -ac 2 - >&3 2>/dev/null; } &
+            DECODER_PID=$!; wait "$DECODER_PID" 2>/dev/null || true; DECODER_PID="" ;;
+        spc)
+            dur="$META"; [[ "$dur" =~ ^[0-9]+$ ]] || dur=120
+            [ "$dur" -lt "$SPC_MIN_DURATION" ] && dur="$SPC_MIN_DURATION"
+            [ "$dur" -gt "$MAX_TRACK" ] && dur="$MAX_TRACK"
+            _decode ffmpeg -hide_banner -loglevel error -t "$dur" -i "$path" -f s16le -ar 44100 -ac 2 - >&3 ;;
+        vgm|vgz|nsf|nsfe|gbs|ay|kss|hes|gym|sap)
+            _decode ffmpeg -hide_banner -loglevel error -t "$MAX_TRACK" -i "$path" -f s16le -ar 44100 -ac 2 - >&3 ;;
+        mp3|flac|wav|ogg|opus|mod|xm|it|s3m)
+            _decode ffmpeg -hide_banner -loglevel error -i "$path" -f s16le -ar 44100 -ac 2 - >&3 ;;
+        *) log "unhandled ext: $FILE"; sleep 1 ;;
+    esac
+done
