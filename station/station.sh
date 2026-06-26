@@ -47,10 +47,28 @@ publish(){
         -H "Content-Type: application/json" --data "$json" >/dev/null 2>&1 || true
 }
 
+# --- skip support -----------------------------------------------------------
+# POST /admin/skip → bridge → kill -USR1 $(cat /tmp/station.pid)
+# The signal interrupts the current `wait`, the decoder is killed, and the
+# loop immediately advances to the next track.
+DECODER_PID=""
+_skip() { [ -n "$DECODER_PID" ] && kill "$DECODER_PID" 2>/dev/null || true; }
+trap _skip SIGUSR1
+echo $$ > /tmp/station.pid
+
 # Open the FIFO once for writing; the encoder reads it continuously, so it never
 # sees EOF between tracks. This blocks until the encoder opens the read end.
 exec 3>"$FIFO"
 log "on air."
+
+# Helper: run a decoder pipeline in the background, record its PID, and wait.
+# SIGUSR1 interrupts wait; _skip() kills the decoder; loop advances.
+_decode() {
+    "$@" &
+    DECODER_PID=$!
+    wait "$DECODER_PID" 2>/dev/null || true
+    DECODER_PID=""
+}
 
 while true; do
     row=$(tail -n +2 "$CSV" | grep -v '^[[:space:]]*$' | shuf -n 1)
@@ -72,18 +90,7 @@ while true; do
     case "$ext" in
         sid)
             dur=$(printf '%d:%02d' $((SID_DURATION/60)) $((SID_DURATION%60)))
-            sidplayfp -t"$dur" -w- "$path" 2>/dev/null \
-              | ffmpeg -hide_banner -loglevel error -i - -f s16le -ar 44100 -ac 2 - >&3 2>/dev/null ;;
-        spc)
-            dur="$META"; [[ "$dur" =~ ^[0-9]+$ ]] || dur=120
-            [ "$dur" -lt "$SPC_MIN_DURATION" ] && dur="$SPC_MIN_DURATION"
-            [ "$dur" -gt "$MAX_TRACK" ] && dur="$MAX_TRACK"
-            ffmpeg -hide_banner -loglevel error -t "$dur" -i "$path" -f s16le -ar 44100 -ac 2 - >&3 2>/dev/null ;;
-        vgm|vgz|nsf|nsfe|gbs|ay|kss|hes|gym|sap)
-            ffmpeg -hide_banner -loglevel error -t "$MAX_TRACK" -i "$path" -f s16le -ar 44100 -ac 2 - >&3 2>/dev/null ;;
-        mp3|flac|wav|ogg|opus|mod|xm|it|s3m)
-            ffmpeg -hide_banner -loglevel error -i "$path" -f s16le -ar 44100 -ac 2 - >&3 2>/dev/null ;;
-        *) log "unhandled ext: $FILE"; sleep 1 ;;
-    esac
-    [ $? -ne 0 ] && sleep 0.3   # brief back-off if the encoder is momentarily down
-done
+            # Pipeline: sidplayfp → ffmpeg. $! is the ffmpeg PID; killing it
+            # causes sidplayfp to get SIGPIPE and exit cleanly.
+            { sidplayfp -t"$dur" -w- "$path" 2>/dev/null \
+              | ffmpeg -hide_banner -loglevel error -i - -f s16le -ar 44100 -ac 2 - 

@@ -8,9 +8,8 @@
 *.wav
 *.ogg
 *.opus
+# local secrets
+.env
 # node / certs / local cruft
 node_modules/
-*.pem
-*.key
-.DS_Store
-*~
+*.pem

@@ -6,17 +6,21 @@ FROM node:20-bookworm-slim
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      ffmpeg sidplayfp icecast2 nginx supervisor python3 curl ca-certificates procps \
+      ffmpeg sidplayfp nginx supervisor python3 curl openssl ca-certificates procps \
  && rm -rf /var/lib/apt/lists/* \
  && rm -f /etc/nginx/sites-enabled/default
+
+# Bundle hls.js from CDN at build time — no runtime CDN dependency, no CSP issues.
+RUN mkdir -p /var/www/minerva-fm \
+ && curl -fsSL "https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js" \
+         -o /var/www/minerva-fm/hls.js
 
 COPY radio.html                 /var/www/minerva-fm/radio.html
 COPY server/metadata-bridge.mjs /app/metadata-bridge.mjs
 COPY minerva-indexer.sh         /app/minerva-indexer.sh
 COPY minerva-radio.sh           /app/minerva-radio.sh
 COPY station/station.sh         /app/station.sh
-COPY docker/icecast.docker.xml  /app/icecast.docker.xml
-COPY docker/nginx.docker.conf   /etc/nginx/conf.d/minerva.conf
+COPY station/nginx.docker.conf  /etc/nginx/conf.d/minerva.conf
 COPY station/supervisord.conf   /etc/supervisor/conf.d/minerva.conf
 COPY station/entrypoint.sh      /app/entrypoint.sh
 RUN chmod +x /app/station.sh /app/entrypoint.sh /app/minerva-indexer.sh

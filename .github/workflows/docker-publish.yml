@@ -23,9 +23,9 @@ jobs:
       matrix:
         include:
           - dockerfile: Dockerfile               # web host only (BYO audio source)
-            image: ghcr.io/thewhytewolf/minerva-fm-radio
+            image: ghcr.io/${{ github.repository_owner }}/minerva-fm-radio
           - dockerfile: Dockerfile.station       # all-in-one station (mount /music)
-            image: ghcr.io/thewhytewolf/minerva-fm-station
+            image: ghcr.io/${{ github.repository_owner }}/minerva-fm-station
     steps:
       - uses: actions/checkout@v4
 

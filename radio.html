@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>MiNERVA-FM — Radio</title>
+<meta property="og:title"       content="MiNERVA-FM — Live Radio">
+<meta property="og:description" content="Retro game music from the MiNERVA Archive. SID, SPC, VGM, MOD and more — live 24/7 broadcast.">
+<meta property="og:type"        content="website">
+<meta name="theme-color"        content="#0a0d0a">
+<meta name="description"        content="Retro game music from the MiNERVA Archive. SID, SPC, VGM, MOD and more — live 24/7 broadcast.">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
@@ -65,10 +70,12 @@
       </div>
     </div>
   </div>
-  <div id="hint">[M]ono [S]canlines &nbsp;·&nbsp; [&#8593;/&#8595;] volume &nbsp;·&nbsp; live broadcast</div>
+  <div id="hint">[M]ono [S]canlines &nbsp;·&nbsp; [&#8593;/&#8595;] volume: <span id="vol-pct">30%</span> &nbsp;·&nbsp; live broadcast</div>
 
   <!-- the live stream element; routed through Web Audio for the visualiser -->
-  <audio id="stream" preload="none" crossorigin="anonymous"></audio>
+  <audio id="stream" preload="none"></audio>
+  <!-- hls.js is bundled in the image — no external CDN dependency -->
+  <script src="/hls.js"></script>
 
 <script>
 "use strict";
@@ -85,8 +92,8 @@ const CONFIG = {
   // the Icecast mount at /stream and the SSE metadata feed at /events.
   // For a cross-origin deploy (e.g. page on GitHub Pages), set absolute URLs here
   // and make sure Icecast/SSE send Access-Control-Allow-Origin + are served over https.
-  streamUrl: "/stream",      // Icecast mount — MP3 recommended (broadest browser support)
-  metaUrl:   "/events",      // Server-Sent Events: now-playing JSON
+  streamUrl: "/hls/stream.m3u8",  // HLS playlist (AES-128 encrypted segments)
+  metaUrl:   "/events",           // Server-Sent Events: now-playing JSON
 };
 
 const DEBUG = false;
@@ -327,7 +334,18 @@ function drawFallback(){ const g = out.getContext("2d"); if(!g) return; g.imageS
    AUDIO — the live stream → analyser (everyone hears the same broadcast)
    ========================================================================== */
 let actx, analyser, freqData, masterGain, srcNode, audioEl;
-let volume = 0.7, retryTimer = null;
+let volume = 0.40, retryTimer = null, hlsInstance = null;
+
+// MAX_GAIN caps the actual audio gain so the full slider range stays usable.
+// 0.4 means 100% displayed = gain 0.4, so "fills room" sits around 75%.
+const MAX_GAIN = 0.4;
+
+function setVolume(v) {
+  volume = Math.max(0, Math.min(1, v));
+  if(masterGain) masterGain.gain.value = volume * MAX_GAIN;
+  const el = document.getElementById("vol-pct");
+  if(el) el.textContent = Math.round(volume * 100) + "%";
+}
 
 function initAudio(){
   audioEl = document.getElementById("stream");
@@ -338,13 +356,36 @@ function initAudio(){
   masterGain = actx.createGain(); masterGain.gain.value = volume;
   srcNode = actx.createMediaElementSource(audioEl);
   srcNode.connect(analyser); analyser.connect(masterGain); masterGain.connect(actx.destination);
+  // native-HLS (Safari) fallback: media element errors trigger a retry
   ["error","stalled","ended"].forEach(ev => audioEl.addEventListener(ev, scheduleRetry));
   audioEl.addEventListener("playing", () => { state.track = state.track === "tuning in…" ? "live" : state.track; });
 }
 function tuneIn(){
-  // cache-bust so a reconnect actually re-opens the stream
-  audioEl.src = CONFIG.streamUrl + (CONFIG.streamUrl.includes("?") ? "&" : "?") + "_=" + Date.now();
-  audioEl.play().catch(err => { if(DEBUG) console.warn("play() blocked/failed:", err); });
+  if(hlsInstance){ hlsInstance.destroy(); hlsInstance = null; }
+
+  if(typeof Hls !== "undefined" && Hls.isSupported()){
+    // hls.js path — Chrome, Firefox, Edge, etc.
+    hlsInstance = new Hls({
+      enableWorker: false,               // avoids SharedArrayBuffer COOP requirement
+      manifestLoadingMaxRetry: 999,       // keep retrying indefinitely (24/7 operation)
+      manifestLoadingRetryDelay: 2000,
+      manifestLoadingMaxRetryTimeout: 8000,
+    });
+    hlsInstance.loadSource(CONFIG.streamUrl);
+    hlsInstance.attachMedia(audioEl);
+    hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+      audioEl.play().catch(err => { if(DEBUG) console.warn("play() blocked:", err); });
+    });
+    hlsInstance.on(Hls.Events.ERROR, (ev, data) => {
+      if(data.fatal){ if(DEBUG) console.warn("HLS fatal:", data.type, data.details); scheduleRetry(); }
+    });
+  } else if(audioEl.canPlayType("application/vnd.apple.mpegurl")){
+    // Native HLS — Safari
+    audioEl.src = CONFIG.streamUrl + "?_=" + Date.now();
+    audioEl.play().catch(err => { if(DEBUG) console.warn("play() blocked:", err); });
+  } else {
+    if(DEBUG) console.warn("HLS not supported in this browser");
+  }
 }
 function scheduleRetry(){
   if(retryTimer) return;
@@ -412,30 +453,4 @@ function frame(time){
    BOOT
    ========================================================================== */
 function boot(){
-  try { glOK = initGL(); } catch(e){ console.warn("WebGL init failed, 2D fallback:", e); glOK = false; }
-  rollLook();
-  ticker.reroll(performance.now());
-  requestAnimationFrame(frame);
-
-  const power = document.getElementById("power");
-  power.addEventListener("click", async () => {
-    powerStart = performance.now();
-    power.remove();
-    initAudio();
-    await actx.resume();
-    state.source = "ON AIR"; state.track = "tuning in…";
-    tuneIn();
-    connectMeta();
-  }, { once:true });
-
-  addEventListener("keydown", (e) => {
-    if(e.key === "m" || e.key === "M") CRT.mono = !CRT.mono;
-    else if(e.key === "s" || e.key === "S") CRT.scanline = CRT.scanline > 0 ? 0 : 0.30;
-    else if(e.key === "ArrowUp"){ volume = Math.min(1, volume+0.05); if(masterGain) masterGain.gain.value = volume; }
-    else if(e.key === "ArrowDown"){ volume = Math.max(0, volume-0.05); if(masterGain) masterGain.gain.value = volume; }
-  });
-}
-boot();
-</script>
-</body>
-</html>
+  try { glOK = initGL(); } catch(e)

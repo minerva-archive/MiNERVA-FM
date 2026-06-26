@@ -1,13 +1,32 @@
+# MiNERVA-FM — all-in-one station.
+# Indexes ./music, encodes to HLS, and serves the CRT web player on port 8080.
+# Audio segments are AES-128 encrypted; the key rotates on every container start.
+#
+# Quick start:
+#   docker compose up --build
+#   open http://localhost:8080/
+#
+# Music layout: ./music/<System>/<Game>/<files>
+#   e.g.  music/SNES/Chrono Trigger/01 Title.spc
+
 services:
-  minerva-fm:
-    build: .
-    image: minerva-fm-radio:latest
-    container_name: minerva-fm
+  station:
+    build:
+      context: .
+      dockerfile: Dockerfile.station
+    image: minerva-fm-station:latest
+    container_name: minerva-fm-station
     ports:
-      - "8080:8080"   # listeners (web) + metadata POST (/meta/update)
-      - "8000:8000"   # Icecast source-push port (for ffmpeg / server/stream.sh)
+      - "${HTTP_PORT:-8080}:8080"
+    volumes:
+      - C:\Files\Music:/music:ro       # your collection (read-only inside the container)
+      - C:\Files\Programs\minerva-radio:/data # generated catalogue (survives restarts)
     environment:
-      ICECAST_SOURCE_PASS: "hackme"   # CHANGE THESE before sharing publicly
-      ICECAST_ADMIN_PASS: "hackme"
-      BRIDGE_TOKEN: "changeme"
+      BRIDGE_TOKEN:   "${BRIDGE_TOKEN:-changeme}"
+      STREAM_BITRATE: "${STREAM_BITRATE:-128k}"
+      # SID_DURATION: "180"   # seconds per SID track
+      # MAX_TRACK:    "300"   # hard cap per track (seconds)
     restart: unless-stopped
+
+volumes:
+  minerva-catalogue:
