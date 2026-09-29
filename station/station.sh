@@ -1,10 +1,12 @@
-﻿#!/bin/bash
+#!/bin/bash
 # MiNERVA-FM station — headless, container-native radio engine.
 # Indexes $MUSIC_DIR, then continuously picks a random track, publishes
 # now-playing to the metadata bridge, and decodes it to PCM on the shared FIFO
 # that the persistent ffmpeg encoder streams to Icecast.
-# Decoders: ffmpeg+libgme (VGM/VGZ/SPC/NSF/...) and sidplayfp (SID) — no
-# PulseAudio, tmux, or AUR players required.
+# Decoders: ffmpeg+libgme (VGM/VGZ/SPC/NSF/...), ffmpeg+libopenmpt (MOD/XM/
+# IT/S3M/...) and sidplayfp (SID) — no PulseAudio, tmux, or AUR players
+# required. The extension lists below must stay in sync with EXTS in
+# minerva-indexer.sh, or tracks are indexed but never decoded (or vice versa).
 
 MUSIC_DIR="${MUSIC_DIR:-/music}"; MUSIC_DIR="${MUSIC_DIR%/}"
 # Catalogue is written to a writable dir (mount /data as a volume to persist it),
@@ -102,7 +104,12 @@ while true; do
             _decode ffmpeg -hide_banner -loglevel error -t "$dur" -i "$path" -f s16le -ar 44100 -ac 2 - >&3 ;;
         vgm|vgz|nsf|nsfe|gbs|ay|kss|hes|gym|sap)
             _decode ffmpeg -hide_banner -loglevel error -t "$MAX_TRACK" -i "$path" -f s16le -ar 44100 -ac 2 - >&3 ;;
-        mp3|flac|wav|ogg|opus|mod|xm|it|s3m)
+        mod|xm|it|s3m|mptm|mtm|med|okt|669|far|dbm|psm|ptm|mdl|dsm|amf|gdm|\
+        stm|ult|umx|mo3|j2b|imf|digi|dmf|dtm|ams|mt2|plm|nst|wow|m15)
+            # libopenmpt reports a real length, but a module with a pattern loop
+            # can report a very long one — hold it to MAX_TRACK.
+            _decode ffmpeg -hide_banner -loglevel error -t "$MAX_TRACK" -i "$path" -f s16le -ar 44100 -ac 2 - >&3 ;;
+        mp3|flac|wav|ogg|opus)
             _decode ffmpeg -hide_banner -loglevel error -i "$path" -f s16le -ar 44100 -ac 2 - >&3 ;;
         *) log "unhandled ext: $FILE"; sleep 1 ;;
     esac

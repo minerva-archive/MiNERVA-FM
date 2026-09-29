@@ -3,7 +3,7 @@
 # Minerva Universal Indexer  —  the single canonical indexer for the radio.
 #
 # Scans WORK_DIR and writes vgm_catalogue.csv, the catalogue consumed by
-# minerva-radio.sh. Replaces the old per-type scripts (minerva-index-basic,
+# station.sh. Replaces the old per-type scripts (minerva-index-basic,
 # minerva-index-spc, minerva-indexer-sid, minerva-index-normalaudio.sh).
 #
 # CSV columns (10):
@@ -11,10 +11,10 @@
 #   TLD_Name, Platform_Name, Game_Name, File_Name, Meta
 #
 #   Meta by type:
-#     .sid             -> whole-file MD5  (the HVSC Songlengths.md5 key)
-#     .spc             -> ID666 song length in seconds
-#     .mp3/.flac/.wav  -> "<seconds>s"    (via ffprobe, if installed)
-#     .vgm/.vgz/.mod   -> empty           (player needs no metadata)
+#     .sid                       -> whole-file MD5 (the HVSC Songlengths.md5 key)
+#     .spc                       -> ID666 song length in seconds
+#     .mp3/.flac/.wav/.ogg/.opus -> "<seconds>s"   (via ffprobe, if installed)
+#     everything else            -> empty          (decoder self-reports length)
 #
 # Usage:   ./minerva-indexer.sh [WORK_DIR] [--xlsx]
 #            WORK_DIR   directory to index (default ".")
@@ -43,7 +43,21 @@ done
 
 OUTPUT_CSV="${OUTPUT_CSV:-$WORK_DIR/vgm_catalogue.csv}"
 OUTPUT_XLSX="${OUTPUT_XLSX:-$WORK_DIR/vgm_catalogue.xlsx}"
-EXTS=(vgz vgm spc sid mp3 flac wav mod)
+# Indexable extensions. Keep in sync with the decoder dispatch in
+# station/station.sh — a file indexed here but unknown there is logged as
+# "unhandled ext" and skipped, and a file playable there but missing here
+# never enters the catalogue, so it is never picked.
+EXTS=(
+    # chiptune rips — ffmpeg + libgme
+    vgm vgz spc nsf nsfe gbs ay kss hes gym sap
+    # C64 — sidplayfp
+    sid
+    # tracker modules — ffmpeg + libopenmpt
+    mod xm it s3m mptm mtm med okt 669 far dbm psm ptm mdl dsm amf gdm
+    stm ult umx mo3 j2b imf digi dmf dtm ams mt2 plm nst wow m15
+    # regular audio — ffmpeg native
+    mp3 flac wav ogg opus
+)
 
 # Folders never descended into (matched against the top-level dir path).
 excluded="cli-visualizer|clivisualizer|libvgm|build|__MACOSX|Xtract|DeAccent|indexer|DOCUMENTS"
@@ -57,7 +71,7 @@ command -v md5sum >/dev/null 2>&1 || { echo "ERROR: md5sum is required."; exit 1
 HAS_FFPROBE=1
 if ! command -v ffprobe >/dev/null 2>&1; then
     HAS_FFPROBE=0
-    echo "NOTE: ffprobe not found — .mp3/.flac/.wav durations will be left blank."
+    echo "NOTE: ffprobe not found — .mp3/.flac/.wav/.ogg/.opus durations will be left blank."
 fi
 
 echo "Indexing: $WORK_DIR"
@@ -115,7 +129,7 @@ meta_for() {                      # echo the Meta value for one file
     case "$lc" in
         *.sid) md5sum "$f" | cut -d' ' -f1 ;;
         *.spc) spc_length "$f" ;;
-        *.mp3|*.flac|*.wav)
+        *.mp3|*.flac|*.wav|*.ogg|*.opus)
             [ "$HAS_FFPROBE" -eq 1 ] || { echo ""; return; }
             d=$(ffprobe -v quiet -show_entries format=duration -of csv=p=0 "$f" 2>/dev/null)
             [[ "$d" =~ ^[0-9.]+$ ]] && printf '%.0fs' "$d" || echo "" ;;
